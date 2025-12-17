@@ -77,6 +77,33 @@ export default function HomeScreen() {
         }, [user?.id])
     );
 
+    // Subscribe to realtime updates for story requests
+    useEffect(() => {
+        if (!user?.id) return;
+
+        const channel = supabase
+            .channel('home-story-request-updates')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'story_requests',
+                    filter: `user_id=eq.${user.id}`,
+                },
+                (payload) => {
+                    console.log('Story request update:', payload);
+                    // Reload pending request on any change
+                    loadPendingRequest();
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [user?.id]);
+
     const loadData = async () => {
         setIsLoading(true);
         try {
@@ -116,21 +143,37 @@ export default function HomeScreen() {
                 setRecentSeries(seriesWithCount);
             }
 
-            // Check for pending story requests (including queued status)
-            const { data: pendingData } = await supabase
+            // Load pending request separately
+            await loadPendingRequest();
+        } catch (error) {
+            console.error('Error loading data:', error);
+        }
+        setIsLoading(false);
+    };
+
+    // Separate function to load pending request - can be called independently
+    const loadPendingRequest = async () => {
+        try {
+            // Use maybeSingle() instead of single() to avoid throwing when no row exists
+            const { data: pendingData, error } = await supabase
                 .from('story_requests')
                 .select('*')
                 .eq('user_id', user?.id)
                 .in('status', ['pending', 'queued', 'processing', 'generating_text', 'generating_images'])
                 .order('created_at', { ascending: false })
                 .limit(1)
-                .single();
+                .maybeSingle();
 
-            setPendingRequest(pendingData);
+            if (error) {
+                console.error('Error loading pending request:', error);
+                setPendingRequest(null);
+            } else {
+                setPendingRequest(pendingData);
+            }
         } catch (error) {
-            console.error('Error loading data:', error);
+            console.error('Error loading pending request:', error);
+            setPendingRequest(null);
         }
-        setIsLoading(false);
     };
 
     const handleStartWizard = () => {
