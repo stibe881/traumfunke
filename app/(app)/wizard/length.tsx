@@ -7,6 +7,7 @@ import {
     ScrollView,
     ActivityIndicator,
     Alert,
+    Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -37,6 +38,8 @@ export default function WizardLengthScreen() {
         selectedMoralId,
         length,
         setLength,
+        generateImages,
+        setGenerateImages,
         reset,
     } = useWizardStore();
 
@@ -121,7 +124,8 @@ export default function WizardLengthScreen() {
                         location: location || null,
                         moral_id: selectedMoralId,
                         length,
-                        notify_on_complete: false,
+                        notify_on_complete: true,
+                        generate_images: generateImages,
                     })
                     .select()
                     .single();
@@ -215,6 +219,22 @@ export default function WizardLengthScreen() {
                             </TouchableOpacity>
                         );
                     })}
+                </View>
+
+                {/* Image Toggle */}
+                <View style={styles.imageToggleContainer}>
+                    <View style={styles.imageToggleInfo}>
+                        <Text style={styles.imageToggleLabel}>🖼️ Mit Bildern</Text>
+                        <Text style={styles.imageToggleHint}>
+                            {generateImages ? 'Bilder werden generiert (langsamer)' : 'Nur Text (schneller)'}
+                        </Text>
+                    </View>
+                    <Switch
+                        value={generateImages}
+                        onValueChange={setGenerateImages}
+                        trackColor={{ false: '#4C4270', true: '#7C3AED' }}
+                        thumbColor={generateImages ? '#A78BFA' : '#8B7FA8'}
+                    />
                 </View>
 
                 {/* Summary */}
@@ -353,6 +373,30 @@ const styles = StyleSheet.create({
     },
     lengthDesc: {
         fontSize: 11,
+        color: '#8B7FA8',
+    },
+    imageToggleContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: '#2D2640',
+        borderRadius: 14,
+        padding: 16,
+        marginBottom: 28,
+        borderWidth: 1,
+        borderColor: '#4C4270',
+    },
+    imageToggleInfo: {
+        flex: 1,
+    },
+    imageToggleLabel: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#E9E3F5',
+        marginBottom: 4,
+    },
+    imageToggleHint: {
+        fontSize: 12,
         color: '#8B7FA8',
     },
     summaryCard: {

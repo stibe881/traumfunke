@@ -31,6 +31,9 @@ interface WizardState {
     // Step 6: Length
     length: StoryLength;
 
+    // Step 6b: Images toggle
+    generateImages: boolean;
+
     // Actions
     setStoryMode: (mode: 'single' | 'series') => void;
     setSeriesConfig: (config: SeriesConfig | null) => void;
@@ -42,6 +45,7 @@ interface WizardState {
     setLocation: (location: string) => void;
     setMoral: (id: string | null) => void;
     setLength: (length: StoryLength) => void;
+    setGenerateImages: (value: boolean) => void;
     reset: () => void;
 }
 
@@ -55,6 +59,7 @@ const initialState = {
     location: '',
     selectedMoralId: null,
     length: 'normal' as StoryLength,
+    generateImages: true,
 };
 
 export const useWizardStore = create<WizardState>((set) => ({
@@ -95,6 +100,8 @@ export const useWizardStore = create<WizardState>((set) => ({
     setMoral: (id) => set({ selectedMoralId: id }),
 
     setLength: (length) => set({ length }),
+
+    setGenerateImages: (value) => set({ generateImages: value }),
 
     reset: () => set(initialState),
 }));

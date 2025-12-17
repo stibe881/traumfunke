@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import {
     View,
     Text,
@@ -13,6 +13,7 @@ import { supabase } from '@/lib/supabase';
 import type { StoryRequest, StoryStatus } from '@/types/supabase';
 import * as Notifications from 'expo-notifications';
 import useI18n from '@/hooks/useI18n';
+import { useFocusEffect } from '@react-navigation/native';
 
 const STATUS_CONFIG: Record<string, { labelKey: string; icon: string; progress: number }> = {
     pending: { labelKey: 'generating.pending', icon: '⏳', progress: 0.05 },
@@ -76,6 +77,13 @@ export default function GeneratingScreen() {
         }
     }, [request?.status]);
 
+    // Reload request status when screen regains focus (e.g., after app was minimized)
+    useFocusEffect(
+        useCallback(() => {
+            loadRequest();
+        }, [requestId])
+    );
+
     const loadRequest = async () => {
         const { data } = await supabase
             .from('story_requests')
@@ -107,7 +115,9 @@ export default function GeneratingScreen() {
                 body: { request_id: requestId },
             });
 
-            if (error) {
+            // Ignore FunctionsFetchError - this means the client timed out but the function
+            // continues running in the background and will complete successfully
+            if (error && error.name !== 'FunctionsFetchError') {
                 console.error('Edge function error:', error);
                 await supabase
                     .from('story_requests')
@@ -116,8 +126,16 @@ export default function GeneratingScreen() {
                         error_message: error.message
                     })
                     .eq('id', requestId);
+            } else if (error) {
+                // FunctionsFetchError - function is still running, just log it
+                console.log('Edge function timeout - function continues in background');
             }
         } catch (error: any) {
+            // Ignore timeout errors - the edge function continues in background
+            if (error?.name === 'FunctionsFetchError' || error?.message?.includes('Failed to send')) {
+                console.log('Request timeout - function continues in background');
+                return;
+            }
             console.error('Error starting story generation:', error);
             await supabase
                 .from('story_requests')

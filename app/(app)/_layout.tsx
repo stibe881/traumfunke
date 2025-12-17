@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
-import { TouchableOpacity } from 'react-native';
+import { TouchableOpacity, Alert } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { addNotificationResponseListener } from '@/lib/notifications';
+import { addNotificationResponseListener, addNotificationReceivedListener } from '@/lib/notifications';
 import useI18n from '@/hooks/useI18n';
 
 export default function AppLayout() {
@@ -11,15 +11,34 @@ export default function AppLayout() {
 
     useEffect(() => {
         // Handle notification tap - navigate to story
-        const subscription = addNotificationResponseListener((response) => {
+        const responseSubscription = addNotificationResponseListener((response) => {
             const data = response.notification.request.content.data;
             if (data?.story_id) {
-                // Navigate to the story
                 router.push(`/(app)/story/${data.story_id}`);
             }
         });
 
-        return () => subscription.remove();
+        // N12: Handle notification received while app is in foreground - show in-app alert
+        const receiveSubscription = addNotificationReceivedListener((notification) => {
+            const { title, body, data } = notification.request.content;
+
+            // Show alert with option to navigate
+            Alert.alert(
+                title || 'Benachrichtigung',
+                body || '',
+                data?.story_id
+                    ? [
+                        { text: 'Später', style: 'cancel' },
+                        { text: 'Öffnen', onPress: () => router.push(`/(app)/story/${data.story_id}`) }
+                    ]
+                    : [{ text: 'OK' }]
+            );
+        });
+
+        return () => {
+            responseSubscription.remove();
+            receiveSubscription.remove();
+        };
     }, [router]);
 
     return (

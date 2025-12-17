@@ -116,12 +116,12 @@ export default function HomeScreen() {
                 setRecentSeries(seriesWithCount);
             }
 
-            // Check for pending story requests
+            // Check for pending story requests (including queued status)
             const { data: pendingData } = await supabase
                 .from('story_requests')
                 .select('*')
                 .eq('user_id', user?.id)
-                .in('status', ['pending', 'processing', 'generating_text', 'generating_images'])
+                .in('status', ['pending', 'queued', 'processing', 'generating_text', 'generating_images'])
                 .order('created_at', { ascending: false })
                 .limit(1)
                 .single();
@@ -177,7 +177,7 @@ export default function HomeScreen() {
                         <View style={styles.pendingContent}>
                             <Text style={styles.pendingTitle}>{t('home.storyCreating')}</Text>
                             <Text style={styles.pendingStatus}>
-                                {pendingRequest.status === 'pending' && t('home.waitingStart')}
+                                {(pendingRequest.status === 'pending' || pendingRequest.status === 'queued') && t('home.waitingStart')}
                                 {pendingRequest.status === 'processing' && t('home.processing')}
                                 {pendingRequest.status === 'generating_text' && t('home.generatingText')}
                                 {pendingRequest.status === 'generating_images' && t('home.generatingImages')}

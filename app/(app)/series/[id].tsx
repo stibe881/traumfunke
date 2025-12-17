@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import {
     View,
     Text,
@@ -7,6 +7,7 @@ import {
     TouchableOpacity,
     ActivityIndicator,
     Alert,
+    Share,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,9 +19,11 @@ import useI18n from '@/hooks/useI18n';
 
 interface EpisodeWithMoral extends SeriesEpisode {
     moral_text?: string;
+    subtitle?: string;
     story?: {
         id: string;
         title: string;
+        subtitle?: string;
         reading_time_minutes: number;
     };
 }
@@ -34,6 +37,9 @@ export default function SeriesDetailScreen() {
     const [episodes, setEpisodes] = useState<EpisodeWithMoral[]>([]);
     const [morals, setMorals] = useState<Moral[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [highlightedEpisodeId, setHighlightedEpisodeId] = useState<string | null>(null);
+    const scrollViewRef = useRef<ScrollView>(null);
+    const episodeRefs = useRef<{ [key: string]: number }>({});
 
     useFocusEffect(
         useCallback(() => {
@@ -58,7 +64,7 @@ export default function SeriesDetailScreen() {
             // Load episodes with story data
             const { data: episodesData, error: episodesError } = await supabase
                 .from('series_episodes')
-                .select('*, story:stories(id, title, reading_time_minutes)')
+                .select('*, story:stories(id, title, subtitle, reading_time_minutes)')
                 .eq('series_id', id)
                 .order('episode_number', { ascending: true });
 
@@ -142,6 +148,70 @@ export default function SeriesDetailScreen() {
         );
     };
 
+    const handleExportSeries = async () => {
+        if (episodes.length === 0) {
+            Alert.alert('Keine Folgen', 'Es gibt noch keine Folgen zum Exportieren.');
+            return;
+        }
+
+        try {
+            // Load full story content for all episodes
+            const storyIds = episodes.filter(ep => ep.story?.id).map(ep => ep.story!.id);
+            const { data: stories } = await supabase
+                .from('stories')
+                .select('id, title, subtitle, content, recap_text')
+                .in('id', storyIds);
+
+            if (!stories || stories.length === 0) {
+                Alert.alert('Fehler', 'Keine Geschichten gefunden.');
+                return;
+            }
+
+            // Build export text
+            let exportText = `📚 ${series?.title || 'Serie'}\n`;
+            exportText += `${'='.repeat(40)}\n\n`;
+
+            episodes.forEach((ep, index) => {
+                const story = stories.find(s => s.id === ep.story?.id);
+                if (!story) return;
+
+                exportText += `\n📖 Folge ${ep.episode_number}`;
+                if (ep.subtitle || story.subtitle) {
+                    exportText += `: ${ep.subtitle || story.subtitle}`;
+                }
+                exportText += `\n${'-'.repeat(30)}\n\n`;
+
+                // Add recap for episodes 2+
+                if (ep.episode_number > 1 && story.recap_text) {
+                    exportText += `🔄 Rückblick:\n${story.recap_text}\n\n`;
+                }
+
+                // Add story text
+                if (story.content?.story && Array.isArray(story.content.story)) {
+                    story.content.story.forEach((paragraph: any) => {
+                        exportText += `${paragraph.text}\n\n`;
+                    });
+                }
+
+                // Add moral if present
+                const moralText = getMoralText(ep.moral_key);
+                if (moralText !== 'Keine Moral') {
+                    exportText += `\n💡 Moral: ${moralText}\n`;
+                }
+
+                exportText += `\n`;
+            });
+
+            await Share.share({
+                message: exportText,
+                title: series?.title || 'Serie exportieren',
+            });
+        } catch (error) {
+            console.error('Error exporting series:', error);
+            Alert.alert('Fehler', 'Die Serie konnte nicht exportiert werden.');
+        }
+    };
+
     if (isLoading) {
         return (
             <View style={styles.loadingContainer}>
@@ -161,6 +231,7 @@ export default function SeriesDetailScreen() {
     return (
         <View style={styles.container}>
             <ScrollView
+                ref={scrollViewRef}
                 style={styles.scrollView}
                 contentContainerStyle={styles.content}
                 showsVerticalScrollIndicator={false}
@@ -177,12 +248,26 @@ export default function SeriesDetailScreen() {
                                 {series.is_finished && ' • ✅ Abgeschlossen'}
                             </Text>
                         </View>
-                        <TouchableOpacity
-                            style={styles.deleteButton}
-                            onPress={handleDeleteSeries}
-                        >
-                            <Ionicons name="trash-outline" size={22} color="#EF4444" />
-                        </TouchableOpacity>
+                        <View style={styles.headerActions}>
+                            <TouchableOpacity
+                                style={styles.editButton}
+                                onPress={() => router.push(`/(app)/series/${id}/edit`)}
+                            >
+                                <Ionicons name="pencil-outline" size={22} color="#A78BFA" />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.exportButton}
+                                onPress={handleExportSeries}
+                            >
+                                <Ionicons name="share-outline" size={22} color="#22C55E" />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.deleteButton}
+                                onPress={handleDeleteSeries}
+                            >
+                                <Ionicons name="trash-outline" size={22} color="#EF4444" />
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 </View>
 
@@ -194,10 +279,22 @@ export default function SeriesDetailScreen() {
                     ) : (
                         <View style={styles.moralHistory}>
                             {episodes.map((ep) => (
-                                <View key={ep.id} style={styles.moralItem}>
+                                <TouchableOpacity
+                                    key={ep.id}
+                                    style={styles.moralItem}
+                                    onPress={() => {
+                                        setHighlightedEpisodeId(ep.id);
+                                        // Scroll to episode (approximate position based on index)
+                                        const episodeIndex = episodes.findIndex(e => e.id === ep.id);
+                                        const scrollPosition = 400 + (episodeIndex * 80); // Header + list offset
+                                        scrollViewRef.current?.scrollTo({ y: scrollPosition, animated: true });
+                                        // Clear highlight after 2 seconds
+                                        setTimeout(() => setHighlightedEpisodeId(null), 2000);
+                                    }}
+                                >
                                     <Text style={styles.moralEpisode}>Folge {ep.episode_number}</Text>
                                     <Text style={styles.moralText}>{getMoralText(ep.moral_key)}</Text>
-                                </View>
+                                </TouchableOpacity>
                             ))}
                         </View>
                     )}
@@ -219,7 +316,10 @@ export default function SeriesDetailScreen() {
                             {episodes.map((ep) => (
                                 <TouchableOpacity
                                     key={ep.id}
-                                    style={styles.episodeCard}
+                                    style={[
+                                        styles.episodeCard,
+                                        highlightedEpisodeId === ep.id && styles.episodeCardHighlighted
+                                    ]}
                                     onPress={() => ep.story?.id && handleViewEpisode(ep.story.id)}
                                 >
                                     <View style={styles.episodeNumber}>
@@ -227,7 +327,7 @@ export default function SeriesDetailScreen() {
                                     </View>
                                     <View style={styles.episodeContent}>
                                         <Text style={styles.episodeTitle}>
-                                            {ep.story?.title || `Folge ${ep.episode_number}`}
+                                            Folge {ep.episode_number}{ep.subtitle || ep.story?.subtitle ? `: ${ep.subtitle || ep.story?.subtitle}` : ''}
                                         </Text>
                                         <Text style={styles.episodeMeta}>
                                             {ep.story?.reading_time_minutes || 0} Min •
@@ -297,6 +397,26 @@ const styles = StyleSheet.create({
     headerContent: {
         flex: 1,
         marginRight: 12,
+    },
+    headerActions: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    editButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        backgroundColor: 'rgba(167, 139, 250, 0.15)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    exportButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        backgroundColor: 'rgba(34, 197, 94, 0.15)',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     deleteButton: {
         width: 44,
@@ -383,6 +503,16 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         borderWidth: 1,
         borderColor: '#4C4270',
+    },
+    episodeCardHighlighted: {
+        backgroundColor: '#3D2F60',
+        borderColor: '#A78BFA',
+        borderWidth: 2,
+        shadowColor: '#A78BFA',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.5,
+        shadowRadius: 10,
+        elevation: 8,
     },
     episodeNumber: {
         width: 40,
