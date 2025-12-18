@@ -40,9 +40,20 @@ export default function StoryViewerScreen() {
             // Load story
             const { data: storyData } = await supabase
                 .from('stories')
-                .select('*')
+                .select('*, story_requests(status)')
                 .eq('id', id)
                 .single();
+
+            // Check if story is ready
+            if (storyData?.story_requests && storyData.story_requests.status !== 'finished') {
+                Alert.alert(
+                    'Noch nicht fertig',
+                    'Diese Geschichte wird noch generiert. Bitte gedulde dich noch einen Moment.',
+                    [{ text: 'OK', onPress: () => router.back() }]
+                );
+                setIsLoading(false);
+                return;
+            }
 
             if (storyData) setStory(storyData);
 

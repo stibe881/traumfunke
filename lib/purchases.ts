@@ -1,5 +1,6 @@
 import Purchases, { LOG_LEVEL, CustomerInfo, PurchasesPackage } from 'react-native-purchases';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { supabase } from './supabase';
 
 // RevenueCat API Keys
@@ -25,6 +26,11 @@ let isInitialized = false;
 export const initializePurchases = async (userId: string) => {
     if (isInitialized) return;
 
+    if (Constants.appOwnership === 'expo') {
+        console.log('Expo Go detected: RevenueCat initialization skipped');
+        return;
+    }
+
     try {
         Purchases.setLogLevel(LOG_LEVEL.DEBUG);
 
@@ -44,6 +50,17 @@ export const initializePurchases = async (userId: string) => {
  * Get available offerings (subscription packages)
  */
 export const getOfferings = async () => {
+    if (!isInitialized) {
+        // Return mock data for Expo Go
+        return {
+            availablePackages: [
+                { product: { identifier: PRODUCT_IDS.PREMIUM_MONTHLY, priceString: '€7.00' } },
+                { product: { identifier: PRODUCT_IDS.PREMIUM_YEARLY, priceString: '€60.00' } },
+                { product: { identifier: PRODUCT_IDS.COINS_5, priceString: '€9.00' } },
+                { product: { identifier: PRODUCT_IDS.COINS_1, priceString: '€2.00' } },
+            ]
+        };
+    }
     try {
         const offerings = await Purchases.getOfferings();
         return offerings.current;
@@ -57,6 +74,14 @@ export const getOfferings = async () => {
  * Purchase a package
  */
 export const purchasePackage = async (pkg: PurchasesPackage): Promise<CustomerInfo | null> => {
+    if (!isInitialized) {
+        console.log('Expo Go: Mocking purchase for', pkg.product.identifier);
+        // Simulate success
+        return {
+            entitlements: { active: {} },
+            allPurchasedProductIdentifiers: [pkg.product.identifier],
+        } as any;
+    }
     try {
         const { customerInfo } = await Purchases.purchasePackage(pkg);
         await syncPurchaseWithSupabase(customerInfo);
@@ -75,6 +100,7 @@ export const purchasePackage = async (pkg: PurchasesPackage): Promise<CustomerIn
  * Check if user has premium entitlement
  */
 export const checkPremiumStatus = async (): Promise<boolean> => {
+    if (!isInitialized) return false;
     try {
         const customerInfo = await Purchases.getCustomerInfo();
         return customerInfo.entitlements.active[PREMIUM_ENTITLEMENT] !== undefined;
@@ -88,6 +114,7 @@ export const checkPremiumStatus = async (): Promise<boolean> => {
  * Get customer info
  */
 export const getCustomerInfo = async (): Promise<CustomerInfo | null> => {
+    if (!isInitialized) return null;
     try {
         return await Purchases.getCustomerInfo();
     } catch (error) {
@@ -100,6 +127,7 @@ export const getCustomerInfo = async (): Promise<CustomerInfo | null> => {
  * Restore purchases (for users who reinstalled)
  */
 export const restorePurchases = async (): Promise<CustomerInfo | null> => {
+    if (!isInitialized) return null;
     try {
         const customerInfo = await Purchases.restorePurchases();
         await syncPurchaseWithSupabase(customerInfo);
@@ -209,18 +237,19 @@ export const spendCoin = async (storyId?: string): Promise<boolean> => {
 /**
  * Get current coin balance
  */
-export const getCoinBalance = async (): Promise<{ coins: number; isPremium: boolean }> => {
+export const getCoinBalance = async (): Promise<{ coins: number; isPremium: boolean; expiresAt: string | null }> => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { coins: 0, isPremium: false };
+    if (!user) return { coins: 0, isPremium: false, expiresAt: null };
 
     const { data: profile } = await supabase
         .from('profiles')
-        .select('coin_balance, is_premium')
+        .select('coin_balance, is_premium, premium_expires_at')
         .eq('id', user.id)
         .single();
 
     return {
         coins: profile?.coin_balance || 0,
         isPremium: profile?.is_premium || false,
+        expiresAt: profile?.premium_expires_at || null,
     };
 };

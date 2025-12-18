@@ -6,6 +6,7 @@ import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider, useAuth } from '@/context/auth';
+import { initializePurchases } from '@/lib/purchases';
 
 // Custom dark theme with warm colors for bedtime app
 const TraumfunkeDarkTheme = {
@@ -50,6 +51,10 @@ function RootLayoutNav() {
     } else if (session && inAuthGroup) {
       // Redirect to home if authenticated
       router.replace('/(app)/(tabs)/home');
+    }
+
+    if (session?.user?.id) {
+      initializePurchases(session.user.id);
     }
   }, [session, isLoading, segments]);
 

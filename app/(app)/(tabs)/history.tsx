@@ -29,7 +29,7 @@ export default function HistoryScreen() {
         try {
             let query = supabase
                 .from('stories')
-                .select('*')
+                .select('*, story_requests(status)')
                 .eq('user_id', user?.id)
                 .is('series_id', null) // Only show standalone stories, not series episodes
                 .order('created_at', { ascending: false });
@@ -39,7 +39,12 @@ export default function HistoryScreen() {
             }
 
             const { data } = await query;
-            if (data) setStories(data);
+            if (data) {
+                const finishedStories = data.filter((s: any) =>
+                    !s.story_requests || s.story_requests.status === 'finished'
+                );
+                setStories(finishedStories);
+            }
         } catch (error) {
             console.error('Error loading stories:', error);
         }

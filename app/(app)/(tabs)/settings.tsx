@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Switch, Linking, Platform, Modal, Share } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Switch, Linking, Platform, Modal, Share, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/context/auth';
@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase';
 import * as Notifications from 'expo-notifications';
 import * as Application from 'expo-application';
 import useI18n from '@/hooks/useI18n';
-import { shareInvite } from '@/lib/familyInvite';
+import { shareInvite, acceptInvite } from '@/lib/familyInvite';
 
 export default function SettingsScreen() {
     const router = useRouter();
@@ -15,6 +15,9 @@ export default function SettingsScreen() {
     const { t, locale, changeLanguage, languages } = useI18n();
     const [notificationsEnabled, setNotificationsEnabled] = useState(false);
     const [showLanguageModal, setShowLanguageModal] = useState(false);
+    const [showJoinModal, setShowJoinModal] = useState(false);
+    const [inviteCode, setInviteCode] = useState('');
+    const [isJoining, setIsJoining] = useState(false);
 
     useEffect(() => {
         checkNotificationStatus();
@@ -105,6 +108,19 @@ export default function SettingsScreen() {
         await shareInvite(user.id);
     };
 
+    const handleJoinFamilySubmit = async () => {
+        if (!user || !inviteCode.trim()) return;
+
+        setIsJoining(true);
+        const success = await acceptInvite(user.id, inviteCode.trim());
+        setIsJoining(false);
+
+        if (success) {
+            setShowJoinModal(false);
+            setInviteCode('');
+        }
+    };
+
     const SettingsItem = ({
         icon,
         title,
@@ -173,6 +189,12 @@ export default function SettingsScreen() {
                     title={t('settings.inviteFamily')}
                     subtitle={t('settings.inviteFamilyHint')}
                     onPress={handleInviteFamily}
+                />
+                <SettingsItem
+                    icon="enter"
+                    title={t('settings.joinFamily') || 'Familie beitreten'}
+                    subtitle={t('settings.joinFamilyHint') || 'Einladungscode eingeben'}
+                    onPress={() => setShowJoinModal(true)}
                 />
             </View>
 
@@ -252,6 +274,44 @@ export default function SettingsScreen() {
                             onPress={() => setShowLanguageModal(false)}
                         >
                             <Text style={styles.modalCloseText}>{t('common.close')}</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Join Family Modal */}
+            <Modal
+                visible={showJoinModal}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowJoinModal(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>{t('settings.enterInviteCode') || 'Code eingeben'}</Text>
+                        <TextInput
+                            style={styles.input}
+                            value={inviteCode}
+                            onChangeText={setInviteCode}
+                            placeholder="TF-XXXXXX"
+                            placeholderTextColor="#6B5B8A"
+                            autoCapitalize="characters"
+                            autoCorrect={false}
+                        />
+                        <TouchableOpacity
+                            style={styles.primaryButton}
+                            onPress={handleJoinFamilySubmit}
+                            disabled={isJoining}
+                        >
+                            <Text style={styles.primaryButtonText}>
+                                {isJoining ? (t('common.loading') || 'Lädt...') : (t('settings.joinFamily') || 'Beitreten')}
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.modalCloseButton}
+                            onPress={() => setShowJoinModal(false)}
+                        >
+                            <Text style={styles.modalCloseText}>{t('common.cancel')}</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -458,5 +518,29 @@ const styles = StyleSheet.create({
     modalCloseText: {
         color: '#8B7FA8',
         fontSize: 14,
+    },
+    input: {
+        backgroundColor: '#1A1625',
+        borderWidth: 1,
+        borderColor: '#3D3255',
+        borderRadius: 10,
+        padding: 14,
+        color: '#F5F3FF',
+        fontSize: 16,
+        marginBottom: 16,
+        textAlign: 'center',
+        fontWeight: 'bold',
+        letterSpacing: 2,
+    },
+    primaryButton: {
+        backgroundColor: '#7C3AED',
+        borderRadius: 10,
+        padding: 14,
+        alignItems: 'center',
+    },
+    primaryButtonText: {
+        color: '#F5F3FF',
+        fontSize: 16,
+        fontWeight: '600',
     },
 });

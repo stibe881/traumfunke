@@ -29,6 +29,7 @@ export default function SubscriptionScreen() {
     const [isPurchasing, setIsPurchasing] = useState(false);
     const [isPremium, setIsPremium] = useState(false);
     const [coinBalance, setCoinBalance] = useState(0);
+    const [expiresAt, setExpiresAt] = useState<string | null>(null);
     const [offerings, setOfferings] = useState<any>(null);
 
     useEffect(() => {
@@ -43,7 +44,9 @@ export default function SubscriptionScreen() {
             getOfferings(),
         ]);
         setIsPremium(premium);
+        setIsPremium(premium);
         setCoinBalance(balance.coins);
+        setExpiresAt(balance.expiresAt);
         setOfferings(offers);
         setIsLoading(false);
     };
@@ -110,6 +113,11 @@ export default function SubscriptionScreen() {
                             <Text style={styles.statusText}>
                                 {t('subscription.unlimitedAccess')}
                             </Text>
+                            {expiresAt && (
+                                <Text style={styles.expiryText}>
+                                    {(t('subscription.expiresAt') || 'Läuft ab am')}: {new Date(expiresAt).toLocaleDateString()}
+                                </Text>
+                            )}
                         </>
                     ) : (
                         <>
@@ -232,6 +240,7 @@ const styles = StyleSheet.create({
     },
     content: {
         padding: 20,
+        paddingTop: 100,
         paddingBottom: 40,
     },
     statusCard: {
@@ -273,6 +282,12 @@ const styles = StyleSheet.create({
     statusText: {
         fontSize: 14,
         color: '#8B7FA8',
+        textAlign: 'center',
+    },
+    expiryText: {
+        fontSize: 12,
+        color: '#A78BFA',
+        marginTop: 8,
         textAlign: 'center',
     },
     section: {

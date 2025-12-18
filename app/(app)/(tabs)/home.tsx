@@ -150,13 +150,19 @@ export default function HomeScreen() {
             // Load recent stories (excluding series episodes for cleaner list)
             const { data: storiesData } = await supabase
                 .from('stories')
-                .select('*')
+                .select('*, story_requests(status)')
                 .eq('user_id', user?.id)
                 .is('series_id', null)
                 .order('created_at', { ascending: false })
-                .limit(3);
+                .limit(10); // Fetch more to allow for filtering
 
-            if (storiesData) setRecentStories(storiesData);
+            if (storiesData) {
+                // Only show stories where status is finished or no request (legacy/manual)
+                const finishedStories = storiesData.filter((s: any) =>
+                    !s.story_requests || s.story_requests.status === 'finished'
+                ).slice(0, 3);
+                setRecentStories(finishedStories);
+            }
 
             // Load recent series with episode count
             const { data: seriesData } = await supabase
@@ -219,6 +225,37 @@ export default function HomeScreen() {
         }
     };
 
+    const handleCancelRequest = async (requestId: string) => {
+        Alert.alert(
+            'Erstellung abbrechen',
+            'Möchtest du die Erstellung wirklich abbrechen? Verbrauchte Münzen werden nicht erstattet.',
+            [
+                { text: 'Nein', style: 'cancel' },
+                {
+                    text: 'Abbrechen',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            const { error } = await supabase
+                                .from('story_requests')
+                                .delete()
+                                .eq('id', requestId);
+
+                            if (error) throw error;
+
+                            // Refresh list
+                            setPendingRequests(prev => prev.filter(r => r.id !== requestId));
+                            loadPendingRequests();
+                        } catch (error) {
+                            console.error('Error cancelling request:', error);
+                            Alert.alert('Fehler', 'Konnte nicht abgebrochen werden.');
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
     if (isLoading) {
         return (
             <View style={[styles.container, styles.centered]}>
@@ -245,38 +282,51 @@ export default function HomeScreen() {
 
                 {/* Pending Generation Banners */}
                 {pendingRequests.map((pendingRequest) => (
-                    <TouchableOpacity
+                    <View
                         key={pendingRequest.id}
                         style={styles.pendingBanner}
-                        onPress={() => {
-                            // For episodes, don't navigate (edge function runs synchronously)
-                            if (!pendingRequest.is_episode) {
-                                router.push(`/(app)/generating/${pendingRequest.id}`);
-                            }
-                        }}
-                        activeOpacity={pendingRequest.is_episode ? 1 : 0.7}
                     >
-                        <View style={styles.pendingIcon}>
-                            <ActivityIndicator size="small" color="#7C3AED" />
-                        </View>
-                        <View style={styles.pendingContent}>
-                            <Text style={styles.pendingTitle}>
-                                {pendingRequest.is_episode
-                                    ? `Folge ${pendingRequest.episode_number || ''} wird erstellt...`
-                                    : t('home.storyCreating')
+                        <TouchableOpacity
+                            style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+                            onPress={() => {
+                                // For episodes, don't navigate (edge function runs synchronously)
+                                if (!pendingRequest.is_episode) {
+                                    router.push(`/(app)/generating/${pendingRequest.id}`);
                                 }
-                            </Text>
-                            <Text style={styles.pendingStatus}>
-                                {pendingRequest.status === 'queued' && t('home.waitingStart')}
-                                {pendingRequest.status === 'generating_text' && t('home.generatingText')}
-                                {pendingRequest.status === 'generating_images' && t('home.generatingImages')}
-                                {pendingRequest.status === 'rendering_clips' && t('home.renderingClips')}
-                            </Text>
-                        </View>
-                        {!pendingRequest.is_episode && (
-                            <Ionicons name="chevron-forward" size={20} color="#A78BFA" />
-                        )}
-                    </TouchableOpacity>
+                            }}
+                            activeOpacity={pendingRequest.is_episode ? 1 : 0.7}
+                            disabled={pendingRequest.is_episode}
+                        >
+                            <View style={styles.pendingIcon}>
+                                <ActivityIndicator size="small" color="#7C3AED" />
+                            </View>
+                            <View style={styles.pendingContent}>
+                                <Text style={styles.pendingTitle}>
+                                    {pendingRequest.is_episode
+                                        ? `Folge ${pendingRequest.episode_number || ''} wird erstellt...`
+                                        : t('home.storyCreating')
+                                    }
+                                </Text>
+                                <Text style={styles.pendingStatus}>
+                                    {pendingRequest.status === 'queued' && t('home.waitingStart')}
+                                    {pendingRequest.status === 'generating_text' && t('home.generatingText')}
+                                    {pendingRequest.status === 'generating_images' && t('home.generatingImages')}
+                                    {pendingRequest.status === 'rendering_clips' && t('home.renderingClips')}
+                                </Text>
+                            </View>
+                            {!pendingRequest.is_episode && (
+                                <Ionicons name="chevron-forward" size={20} color="#A78BFA" style={{ marginRight: 8 }} />
+                            )}
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={{ padding: 4 }}
+                            onPress={() => handleCancelRequest(pendingRequest.id)}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                            <Ionicons name="close-circle-outline" size={24} color="#EF4444" />
+                        </TouchableOpacity>
+                    </View>
                 ))}
 
                 {/* Main Action Card */}
@@ -299,57 +349,7 @@ export default function HomeScreen() {
                     <Ionicons name="arrow-forward" size={24} color="#F5F3FF" />
                 </TouchableOpacity>
 
-                {/* Children Section */}
-                <View style={styles.section}>
-                    <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>{t('home.myChildren')}</Text>
-                        <TouchableOpacity onPress={() => router.push('/(app)/children/')}>
-                            <Text style={styles.seeAllButton}>{t('home.viewAll')}</Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    {children.length === 0 ? (
-                        <View style={styles.emptyState}>
-                            <Text style={styles.emptyIcon}>👶</Text>
-                            <Text style={styles.emptyText}>
-                                {t('home.noChildren')}
-                            </Text>
-                        </View>
-                    ) : (
-                        <ScrollView
-                            horizontal
-                            showsHorizontalScrollIndicator={false}
-                            contentContainerStyle={styles.childrenList}
-                        >
-                            {children.map((child) => (
-                                <TouchableOpacity
-                                    key={child.id}
-                                    style={styles.childCard}
-                                    onPress={() => router.push(`/(app)/children/${child.id}`)}
-                                >
-                                    <View style={styles.childAvatar}>
-                                        {child.photo_url ? (
-                                            <Image source={{ uri: child.photo_url }} style={styles.childAvatarImage} />
-                                        ) : (
-                                            <Text style={styles.childAvatarText}>
-                                                {child.gender === 'Junge' ? '👦' : child.gender === 'Maedchen' ? '👧' : '🧒'}
-                                            </Text>
-                                        )}
-                                    </View>
-                                    <Text style={styles.childName}>{child.name}</Text>
-                                    <Text style={styles.childAge}>{child.age} {t('home.years')}</Text>
-                                </TouchableOpacity>
-                            ))}
-                            <TouchableOpacity
-                                style={[styles.childCard, styles.addChildCard]}
-                                onPress={() => router.push('/(app)/children/new')}
-                            >
-                                <Ionicons name="add-circle" size={40} color="#7C3AED" />
-                                <Text style={styles.addChildText}>{t('home.addChild')}</Text>
-                            </TouchableOpacity>
-                        </ScrollView>
-                    )}
-                </View>
+                {/* Children Section removed per user request */}
 
                 {/* Recent Stories/Series Section with Toggle */}
                 {(recentStories.length > 0 || recentSeries.length > 0) && (
